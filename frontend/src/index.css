@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #22313f;
+  background: #f7f4ef;
+  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(241, 143, 101, 0.16), transparent 26%),
+    radial-gradient(circle at bottom right, rgba(92, 126, 70, 0.14), transparent 24%),
+    #f7f4ef;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+a {
+  color: inherit;
+}
+
+input,
+textarea,
+select {
+  color: #22313f;
+  background-color: #ffffff;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #78716c;
+  opacity: 1;
+}
+
+.leaflet-container {
+  font-family: inherit;
+}
