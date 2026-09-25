@@ -6,11 +6,11 @@ FoodBridge does not independently certify, determine, or guarantee food safety. 
 
 ## Core Idea
 
-FoodBridge helps answer: **Which available donation should be prioritized for redistribution?** It does not make food-safety determinations. A donor chooses the intended recipient type when publishing a donation; that choice is not changed automatically.
+FoodBridge helps answer: **Which available donation should be prioritized for redistribution?** Donors choose the intended recipient when they publish a donation. The platform does not automatically change that choice over time.
 
 ### Dynamic Redistribution Priority
 
-Each available listing receives a transparent 0–100 score using operational factors:
+Available donations receive a transparent score from 0 to 100 based on operational factors:
 
 | Factor | Weight |
 | --- | ---: |
@@ -20,119 +20,142 @@ Each available listing receives a transparent 0–100 score using operational fa
 | Quantity | 10% |
 | Pickup availability | 5% |
 
-The score maps to application-level urgency: 80–100 URGENT, 60–79 HIGH, 40–59 MEDIUM, and 0–39 NORMAL. These thresholds describe redistribution priority only. Waiting time increases progressively over a configurable 24-hour range; distance is normalized over 50 km, and quantity over 100 units. The weights and ranges live in `backend/utils/redistributionPriority.js`.
+The score maps to application-level urgency:
 
-Demand match uses active NGO requirements with a matching food type and outstanding quantity. Distance uses stored GeoJSON coordinates and haversine ranking; MongoDB `2dsphere` indexes are retained for geospatial queries. The engine does not invent requirement demand.
+| Score | Urgency |
+| ---: | --- |
+| 80–100 | URGENT |
+| 60–79 | HIGH |
+| 40–59 | MEDIUM |
+| 0–39 | NORMAL |
 
-## Features
+These thresholds describe redistribution priority only. The weights and normalization ranges are configurable in `backend/utils/redistributionPriority.js`. Waiting time reaches its maximum over 24 hours, distance is normalized over 50 km, and quantity over 100 units. Demand match uses active NGO requirements with the same food type and quantity unit, considering unfulfilled quantity. The engine uses actual requirement records; it does not invent demand values.
 
-- JWT authentication and role-based routes
-- Donor-created donation listings with recipient intent and pickup windows
-- NGO requirement creation, update, pause, activation, and deletion
-- Dynamic priority and urgency recalculation, including a 15-minute scheduled refresh
-- Location-aware listing search and Leaflet map views
-- Request, donor acceptance, and recipient pickup completion workflow
-- User and role-room notifications over Socket.IO
-- Restaurant waste and surplus analytics based on historical records
-- Administrative donation, status, urgency, and recipient analytics
-- Demo seed data across all five roles
+Donation and recipient locations use GeoJSON coordinates and MongoDB `2dsphere` indexes. Distances are calculated with the haversine formula. Maps are displayed with Leaflet and React Leaflet.
 
-## Implemented Roles
+## Roles
 
-- `restaurant`: donor that creates and manages its own donations and accepts requests
-- `ngo`: human-beneficiary / redistribution organization; manages its requirements and requests human-intended donations
-- `animal_husbandry`: recipient organization for donations the donor explicitly marks for animal use
-- `industry`: recipient organization for donations the donor explicitly marks for industrial processing such as composting or biogas
-- `admin`: platform administrator
+- `restaurant`: donor that creates and manages its own donations and accepts recipient requests
+- `ngo`: human-beneficiary and redistribution organization that manages its food requirements and requests human-intended donations
+- `animal_husbandry`: recipient organization for donations the donor explicitly intends for animal use
+- `industry`: recipient organization for donations the donor explicitly intends for industrial processing, such as composting or biogas
+- `admin`: platform administrator with user, listing, and operational analytics views
 
-Animal and industry listings are not automatic downgrades. FoodBridge does not decide whether a donation has become suitable only for a different recipient type.
+Animal and industry intent is donor-declared. FoodBridge does not automatically reclassify donations between recipient types.
 
 ## Main Workflows
 
-### Restaurant / Donor
+### Donor
 
-1. Create a donation with food type, quantity, description, donor location, intended recipient, and pickup window.
-2. Review its score, urgency, waiting time, demand match, distance, and pickup availability.
-3. Review incoming requests and accept one.
-4. Track completion and waste analytics.
+1. Create a donation with food type, quantity, description, intended recipient, and pickup window.
+2. Review its priority score, urgency, waiting time, demand match, distance, and pickup availability.
+3. Review incoming requests and accept a recipient.
+4. Track the donation through completion.
 
 ### NGO
 
-1. Create active food requirements, including food type and quantity.
-2. Browse donor-declared human / NGO donations, sorted by priority by default.
-3. Filter by food type, radius, quantity, urgency, and demand match.
-4. Request a donation; after donor acceptance, confirm pickup to complete it.
+1. Create, edit, pause, activate, or delete food requirements.
+2. Browse human-intended donations, sorted by priority by default.
+3. Filter by food type, distance radius, quantity, priority range, urgency, or demand match.
+4. Request a donation. After the donor accepts, confirm pickup to complete it and update fulfilled requirement quantity.
 
 ### Animal Husbandry and Industry
 
-Browse available donations whose `intendedRecipientType` is respectively `animal` or `industry`, then request them. The recipient type reflects donor-declared intended use and is not derived from a safety score.
+Browse and request available donations whose `intendedRecipientType` is respectively `animal` or `industry`. Each role has a requests and pickups view.
 
 ### Admin
 
-Review users, listings, donation statuses, urgency levels, intended recipient types, quantities, and average time to claim.
+Review users, current donations, operational statuses, urgency levels, intended recipient types, quantity totals, and average claim/pickup times.
 
-## Tech Stack
+## Donation Statuses
 
-- Frontend: React, React Router, Tailwind CSS, Axios, Recharts, Socket.IO Client, Leaflet / React Leaflet, Vite
-- Backend: Node.js, Express, MongoDB / Mongoose, JWT, bcryptjs, multer, Socket.IO, node-cron, dotenv, cors
+The listing model supports `available`, `requested`, `claimed`, `pickup_pending`, `completed`, and `cancelled`. The current UI flow uses `available` → `requested` → `claimed` → `completed`; donors can cancel available or requested donations. Listings are not automatically marked complete or expired by the priority score.
+
+## Technology
+
+- **Frontend:** React, Vite, React Router, Tailwind CSS, Axios, Recharts, Socket.IO Client, Leaflet, React Leaflet
+- **Backend:** Node.js, Express, MongoDB, Mongoose, JWT, bcryptjs, multer, Socket.IO, node-cron, dotenv, cors
 
 ## Project Structure
 
 ```text
 backend/
-  middleware/  models/  routes/  socket/  uploads/  utils/
-  seed.js  server.js
+  middleware/       JWT authentication and role checks
+  models/           User, FoodListing, NGORequirement, Notification, WasteHistory
+  routes/           auth, food, requirements, analytics, notifications, admin
+  socket/           authenticated role and user rooms
+  utils/            priority engine, cron, geospatial and waste analytics utilities
+  seed.js
+  server.js
 frontend/
-  src/components/  src/context/  src/pages/  src/utils/
-  src/App.jsx  src/main.jsx
+  src/components/   shared cards, badges, maps, navigation and notifications
+  src/context/      authentication and Socket.IO state
+  src/pages/        role-specific dashboards and workflows
+  src/utils/        API client
+  src/App.jsx
 README.md
 ```
 
-## Environment Variables
+## Configuration
 
-Backend `backend/.env`:
+Create `backend/.env` from `backend/.env.example`:
 
 ```env
 PORT=5000
 MONGODB_URI=mongodb://127.0.0.1:27017/foodbridge
 JWT_SECRET=replace_with_a_long_random_secret
 JWT_EXPIRE=7d
-GOOGLE_MAPS_API_KEY=optional_key_if_used_by_your_maps_setup
-CLIENT_URL=http://localhost:5173
+GOOGLE_MAPS_API_KEY=your_google_maps_key
+CLIENT_URL=http://localhost:3000
 NODE_ENV=development
 ```
 
-Frontend `frontend/.env`:
+The current map component uses Leaflet. The Google Maps key is an optional environment template value for integrations that need it.
+
+Create `frontend/.env` with:
 
 ```env
 VITE_API_URL=http://localhost:5000/api
 VITE_SOCKET_URL=http://localhost:5000
 ```
 
-No weather or sensor credentials are used.
+No weather or sensor API credentials are used.
 
 ## Getting Started
 
-Install dependencies in `backend` and `frontend`, configure the backend `.env`, and start MongoDB. Then:
+Install Node.js dependencies in both folders and start a local MongoDB instance, or configure `MONGODB_URI` to use MongoDB Atlas.
+
+Seed the demo accounts and example data:
 
 ```powershell
 cd backend
+npm install
+Copy-Item .env.example .env
 npm run seed
+```
+
+The seed script replaces records associated with the five FoodBridge demo accounts and their related demo listings, requirements, notifications, and waste history. It does not clear unrelated users or records.
+
+Start the backend in one terminal:
+
+```powershell
+cd backend
 npm run dev
 ```
 
-In a second terminal:
+Start the frontend in another terminal:
 
 ```powershell
 cd frontend
+npm install
 npm run dev
 ```
 
-The Vite frontend runs at `http://localhost:3000`; the API health endpoint is `http://localhost:5000/api/health`.
+The default frontend URL is `http://localhost:3000`. The backend health endpoint is `http://localhost:5000/api/health`.
 
 ### Demo Accounts
 
-All seeded accounts use `password123`:
+All seeded demo accounts use `password123`:
 
 - `restaurant@foodbridge.com`
 - `ngo@foodbridge.com`
@@ -140,77 +163,82 @@ All seeded accounts use `password123`:
 - `industry@foodbridge.com`
 - `admin@foodbridge.com`
 
-## Backend API
+## API Overview
+
+All routes are prefixed with `/api`. Protected routes require a JWT bearer token.
 
 ### Authentication
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/auth/me`
+- `POST /auth/register`
+- `POST /auth/login`
+- `GET /auth/me`
 
 ### Donations
 
-- `POST /api/food` — restaurant creates a donation
-- `GET /api/food` — role-matched available donations; supports food type, radius, quantity and priority ranges, urgency, demand filters, and sorting
-- `GET /api/food/restaurant` — restaurant's own donations and requests
-- `GET /api/food/claimed/mine` — recipient's pending requests and accepted/completed donations
-- `GET /api/food/:id`
-- `PUT /api/food/:id` — restaurant updates its own donation details or donor-declared intended recipient
-- `PUT /api/food/:id/request` — recipient requests an available, correctly intended donation
-- `PUT /api/food/:id/claim` — owning restaurant accepts a request
-- `PUT /api/food/:id/pickup-verify` — accepted recipient completes pickup
-- `DELETE /api/food/:id` — owning restaurant cancels an available/requested donation
+- `POST /food` — restaurant creates a donation
+- `GET /food` — recipient sees available donations matching their role; supports food type, radius, quantity and priority ranges, urgency, demand match, and sorting
+- `GET /food/restaurant` — restaurant's donations and recipient requests
+- `GET /food/claimed/mine` — recipient's pending requests, accepted donations, and completed pickups
+- `GET /food/:id` — donation details
+- `PUT /food/:id` — restaurant updates its own active donation, including declared recipient intent and pickup window
+- `PUT /food/:id/request` — recipient requests an available donation intended for its role
+- `PUT /food/:id/claim` — owning restaurant accepts the request
+- `PUT /food/:id/pickup-verify` — accepted recipient confirms pickup and completes the donation
+- `DELETE /food/:id` — restaurant cancels an available or requested donation
 
 ### NGO Requirements
 
-- `POST /api/ngo/requirements`
-- `GET /api/ngo/requirements`
-- `PUT /api/ngo/requirements/:id`
-- `DELETE /api/ngo/requirements/:id`
+- `POST /ngo/requirements`
+- `GET /ngo/requirements`
+- `PUT /ngo/requirements/:id`
+- `DELETE /ngo/requirements/:id`
 
-### Other APIs
+Requirements store food type, required and fulfilled quantity, unit, location, and active/paused/fulfilled status.
 
-- Analytics: `GET /api/analytics/restaurant/waste-summary`, `/prediction`, `/weekly-pattern`
-- Notifications: `GET /api/notifications`, `PUT /api/notifications/:id/read`
-- Admin: `GET /api/admin/users`, `/listings`, `/stats`
+### Analytics, Notifications, and Admin
+
+- Restaurant analytics: `GET /analytics/restaurant/waste-summary`, `GET /analytics/restaurant/prediction`, `GET /analytics/restaurant/weekly-pattern`
+- Notifications: `GET /notifications`, `PUT /notifications/:id/read`
+- Admin: `GET /admin/users`, `GET /admin/listings`, `GET /admin/stats`
 
 ## Important Backend Modules
 
-- `backend/models/FoodListing.js`: donor-declared recipient intent, operational status, pickup window, priority fields, and geospatial index.
-- `backend/models/NGORequirement.js`: NGO demand, fulfilled quantity, location, and active/paused/fulfilled state.
-- `backend/utils/redistributionPriority.js`: configurable transparent priority formula and factor explanations.
-- `backend/utils/cronJob.js`: recalculates priorities for available listings every 15 minutes and notifies relevant recipients when scores change meaningfully.
-- `backend/socket/socketHandler.js` and `backend/utils/notificationService.js`: JWT socket rooms, persistent notifications, and live redistribution events.
-- `backend/utils/wastePredictionModel.js`: rule-based historical surplus/waste prediction and preparation guidance. It does not predict safety, spoilage, or expiry.
+- `backend/models/FoodListing.js`: donor intent, listing status, pickup availability, priority data, and donor geolocation.
+- `backend/models/NGORequirement.js`: NGO demand and fulfillment tracking.
+- `backend/utils/redistributionPriority.js`: weighted operational score, urgency mapping, distance calculation, and factor details.
+- `backend/utils/cronJob.js`: recalculates priority for available donations every 15 minutes and notifies recipients when priority changes meaningfully.
+- `backend/utils/notificationService.js` and `backend/socket/socketHandler.js`: persisted user notifications; JWT-authenticated sockets join per-user and role rooms for live events.
+- `backend/utils/wastePredictionModel.js`: rule-based prediction of historical surplus/waste patterns and preparation guidance. It does not predict safety, spoilage, or expiry.
 
 ## Frontend Highlights
 
-- Role-specific donor, NGO, animal, industry, and admin dashboards
-- `FoodCard`, `PriorityBadge`, and `WaitingTime` show listing and operational priority details
-- NGO requirements are managed from the NGO dashboard
-- Listing maps use Leaflet and available coordinates
-- Protected routes and Socket.IO live notifications
+- Role-specific restaurant, NGO, animal, industry, and admin routes
+- `FoodCard`, `PriorityBadge`, and `WaitingTime` display operational donation details
+- NGO requirement management in the NGO dashboard
+- Leaflet donation maps
+- Live notifications and listing refreshes over Socket.IO
+- JWT session handling and role-protected routes
 
-## Notes
+## Analytics and Current Limitations
 
-- Listing statuses are `available`, `requested`, `claimed`, `pickup_pending`, `completed`, and `cancelled`.
-- There is no automatic listing or food expiration based on a priority score. A donor may cancel an available/requested listing.
-- Priority factors explain operational redistribution ranking; they are not food-safety measurements.
-- Food image uploads are stored under `backend/uploads/`.
-- Legacy databases should be reseeded or migrated to remove obsolete food listing fields and status values.
+Restaurant analytics summarize historical listed, claimed, and wasted quantities and provide a rule-based next-day waste estimate. Admin analytics report current donation status, urgency, intended recipient, quantities, and claim/pickup timing.
 
-## Current Status
+Demand matching currently supports NGO requirements and exact food-type/unit matching. Animal and industry demand requirements, quantity-unit conversion, and a richer pickup scheduling flow are not implemented. Existing database listings without `intendedRecipientType` are not shown in role-matched donation lists; their intended use must be explicitly reviewed before migration.
 
-This repository includes the MERN app, role-based donation and requirement flows, priority scoring, geospatial matching, live notifications, historical restaurant analytics, and demo accounts. The priority model is a deterministic operational rules engine, not machine learning.
+## Useful Commands
 
-## Future Improvements
+```powershell
+# backend
+npm run dev
+npm start
+npm run seed
 
-- Add recipient demand models for animal husbandry and industry organizations
-- Add a richer request negotiation and pickup scheduling flow
-- Improve unit-aware demand matching and conversion between quantity units
-- Add email/SMS delivery, cloud image storage, audit trails, and automated integration coverage
-- Future research could investigate ML-based food safety prediction using validated food-specific datasets; the current application does not perform this.
+# frontend
+npm run dev
+npm run build
+npm run preview
+```
 
 ## License
 
-This project is for academic / capstone use unless you choose to add a specific license.
+This project is for academic / capstone use unless a separate license is added.
