@@ -15,10 +15,6 @@ const wasteHistorySchema = new mongoose.Schema(
       type: String,
       required: true
     },
-    season: {
-      type: String,
-      required: true
-    },
     foodItems: [
       {
         foodName: String,
@@ -35,10 +31,6 @@ const wasteHistorySchema = new mongoose.Schema(
     totalClaimed: {
       type: Number,
       default: 0
-    },
-    weatherCondition: {
-      type: String,
-      default: ''
     },
     specialEvent: {
       type: Boolean,

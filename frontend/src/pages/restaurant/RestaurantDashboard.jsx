@@ -5,8 +5,8 @@ export default function RestaurantDashboard() {
   const { user } = useAuth();
 
   const cards = [
-    { title: 'Create a new listing', to: '/restaurant/add-listing', copy: 'Add surplus food and classify it instantly.' },
-    { title: 'Track active listings', to: '/restaurant/listings', copy: 'See which items are available, claimed, or picked up.' },
+    { title: 'Create a donation', to: '/restaurant/add-listing', copy: 'Declare intended recipient and pickup availability for surplus food.' },
+    { title: 'Track donations', to: '/restaurant/listings', copy: 'Review priority, recipient requests, and completed pickups.' },
     { title: 'Review analytics', to: '/restaurant/analytics', copy: 'Understand waste patterns and tomorrow’s preparation guidance.' }
   ];
 
@@ -16,7 +16,7 @@ export default function RestaurantDashboard() {
         <p className="text-sm uppercase tracking-[0.22em] text-white">Restaurant dashboard</p>
         <h1 className="mt-2 text-4xl font-semibold">{user?.organizationName || user?.name}</h1>
         <p className="mt-3 max-w-2xl text-white/90">
-          Publish surplus food, monitor category changes, and reduce avoidable waste with live operational signals.
+          Publish surplus food and respond to requests from organizations aligned with your declared intended recipient.
         </p>
       </section>
 

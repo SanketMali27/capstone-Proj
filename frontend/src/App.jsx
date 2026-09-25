@@ -16,6 +16,8 @@ import AvailableForAnimals from './pages/animal/AvailableForAnimals';
 import IndustryDashboard from './pages/industry/IndustryDashboard';
 import AvailableForIndustry from './pages/industry/AvailableForIndustry';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import RecipientRequests from './pages/RecipientRequests';
+
 
 export default function App() {
   return (
@@ -43,11 +45,13 @@ export default function App() {
           <Route element={<ProtectedRoute roles={['animal_husbandry']} />}>
             <Route path="/animal/dashboard" element={<AnimalDashboard />} />
             <Route path="/animal/available-food" element={<AvailableForAnimals />} />
+            <Route path="/animal/requests" element={<RecipientRequests />} />
           </Route>
 
           <Route element={<ProtectedRoute roles={['industry']} />}>
             <Route path="/industry/dashboard" element={<IndustryDashboard />} />
             <Route path="/industry/available-food" element={<AvailableForIndustry />} />
+            <Route path="/industry/requests" element={<RecipientRequests />} />
           </Route>
 
           <Route element={<ProtectedRoute roles={['admin']} />}>

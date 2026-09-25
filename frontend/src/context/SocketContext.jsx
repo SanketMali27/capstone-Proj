@@ -5,19 +5,19 @@ import { useAuth } from './AuthContext';
 const SocketContext = createContext(null);
 
 export function SocketProvider({ children }) {
-  const { token } = useAuth();
+  const { token, user, loading } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [listingEvents, setListingEvents] = useState([]);
 
   const socket = useMemo(() => {
-    if (!token) {
+    if (!token || !user || loading) {
       return null;
     }
 
     return io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
       auth: { token }
     });
-  }, [token]);
+  }, [loading, token, user]);
 
   useEffect(() => {
     if (!socket) {
@@ -45,4 +45,3 @@ export function SocketProvider({ children }) {
 }
 
 export const useSocket = () => useContext(SocketContext);
-

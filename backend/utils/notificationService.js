@@ -20,6 +20,8 @@ const emitToRoleRoom = (room, payload) => {
   }
 
   ioInstance.to(room).emit('listing:update', payload);
+  const eventNames = [...new Set([payload.event, ...(payload.events || [])].filter(Boolean))];
+  eventNames.forEach((eventName) => ioInstance.to(room).emit(eventName, payload));
 };
 
 const createNotification = async ({ recipientId, recipientRole, type, message, foodListingId }) => {

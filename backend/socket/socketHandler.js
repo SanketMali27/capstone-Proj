@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 
 const ROLE_ROOM_MAP = {
+  restaurant: 'restaurant-room',
   ngo: 'ngo-room',
   animal_husbandry: 'animal-room',
   industry: 'industry-room'

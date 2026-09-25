@@ -1,26 +1,23 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import api from '../../utils/api';
 
 export default function NGODashboard() {
-  return (
-    <div className="space-y-8">
-      <section className="rounded-[2.5rem] bg-white p-8 shadow-sm">
-        <p className="text-sm uppercase tracking-[0.22em] text-slate-600">NGO dashboard</p>
-        <h1 className="mt-2 text-4xl font-semibold text-slate-900">Recover safe food before it expires</h1>
-        <p className="mt-3 max-w-2xl text-slate-700">
-          Focus on human-safe listings, claim quickly, and verify pickup conditions for quality traceability.
-        </p>
-      </section>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Link to="/ngo/available-food" className="rounded-[2rem] bg-slate-900 p-8 text-white shadow-sm">
-          <h2 className="text-2xl font-semibold">Available food</h2>
-          <p className="mt-3 text-sm text-white/90">View live human-safe listings sorted by expiry and distance.</p>
-        </Link>
-        <Link to="/ngo/claimed-food" className="rounded-[2rem] border border-stone-200 bg-white p-8 shadow-sm">
-          <h2 className="text-2xl font-semibold text-slate-900">Claimed food</h2>
-          <p className="mt-3 text-sm text-slate-700">Confirm pickup and record food condition notes.</p>
-        </Link>
-      </div>
-    </div>
-  );
+  const [requirements, setRequirements] = useState([]);
+  const [form, setForm] = useState({ foodType: 'cooked', quantityRequired: '', quantityUnit: 'portions' });
+  const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState('');
+  const load = async () => { try { const response = await api.get('/ngo/requirements'); setRequirements(response.data.data); } catch (e) { setError(e.response?.data?.message || 'Could not load requirements'); } };
+  useEffect(() => { load(); }, []);
+  const create = async (event) => { event.preventDefault(); try { if (editingId) await api.put(`/ngo/requirements/${editingId}`, form); else await api.post('/ngo/requirements', form); setEditingId(null); setForm({ foodType: 'cooked', quantityRequired: '', quantityUnit: 'portions' }); load(); } catch (e) { setError(e.response?.data?.message || 'Could not save requirement'); } };
+  const edit = (item) => { setEditingId(item._id); setForm({ foodType: item.foodType, quantityRequired: item.quantityRequired, quantityUnit: item.quantityUnit }); };
+  const remove = async (id) => { try { await api.delete(`/ngo/requirements/${id}`); load(); } catch (e) { setError(e.response?.data?.message || 'Could not delete requirement'); } };
+  const toggle = async (item) => { try { await api.put(`/ngo/requirements/${item._id}`, { status: item.status === 'active' ? 'paused' : 'active' }); load(); } catch (e) { setError(e.response?.data?.message || 'Could not update requirement'); } };
+  return <div className="space-y-8">
+    <section className="rounded-[2.5rem] bg-white p-8 shadow-sm"><p className="text-sm uppercase tracking-[0.22em] text-slate-600">NGO dashboard</p><h1 className="mt-2 text-4xl font-semibold text-slate-900">Redistribute donations that match your needs</h1><p className="mt-3 max-w-2xl text-slate-700">Available donor-declared human redistribution listings are ranked by urgency, distance, and your active requirements.</p></section>
+    <div className="grid gap-5 lg:grid-cols-2"><Link to="/ngo/available-food" className="rounded-[2rem] bg-slate-900 p-8 text-white shadow-sm"><h2 className="text-2xl font-semibold">Available donations</h2><p className="mt-3 text-sm text-white/90">Browse highest-priority matches first and request a donation.</p></Link><Link to="/ngo/claimed-food" className="rounded-[2rem] border border-stone-200 bg-white p-8 shadow-sm"><h2 className="text-2xl font-semibold text-slate-900">Requests and pickups</h2><p className="mt-3 text-sm text-slate-700">Track accepted requests and confirm completed pickups.</p></Link></div>
+    <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm"><h2 className="text-2xl font-semibold text-slate-900">Your food requirements</h2><form onSubmit={create} className="mt-4 grid gap-3 md:grid-cols-4"><select value={form.foodType} onChange={(e) => setForm({ ...form, foodType: e.target.value })} className="rounded-2xl border border-stone-200 px-4 py-3"><option value="cooked">Cooked</option><option value="raw">Raw</option><option value="packaged">Packaged</option><option value="dairy">Dairy</option><option value="bakery">Bakery</option><option value="mixed">Mixed</option></select><input type="number" min="1" required placeholder="Quantity needed" value={form.quantityRequired} onChange={(e) => setForm({ ...form, quantityRequired: e.target.value })} className="rounded-2xl border border-stone-200 px-4 py-3"/><select value={form.quantityUnit} onChange={(e) => setForm({ ...form, quantityUnit: e.target.value })} className="rounded-2xl border border-stone-200 px-4 py-3"><option value="portions">Portions</option><option value="kg">kg</option><option value="litres">Litres</option><option value="boxes">Boxes</option></select><button className="rounded-2xl bg-slate-900 px-4 py-3 font-semibold text-white">{editingId ? 'Save changes' : 'Add requirement'}</button>{editingId && <button type="button" onClick={() => { setEditingId(null); setForm({ foodType: 'cooked', quantityRequired: '', quantityUnit: 'portions' }); }} className="rounded-2xl border px-4 py-3">Cancel edit</button>}</form>
+      {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}<div className="mt-5 space-y-2">{requirements.map((item) => <div key={item._id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-stone-50 px-4 py-3"><span className="capitalize">{item.foodType} · {item.quantityFulfilled} / {item.quantityRequired} {item.quantityUnit} · {item.status}</span><span className="flex gap-2"><button onClick={() => edit(item)} className="rounded-full border px-3 py-1 text-sm">Edit</button><button onClick={() => toggle(item)} className="rounded-full border px-3 py-1 text-sm">{item.status === 'active' ? 'Pause' : 'Activate'}</button><button onClick={() => remove(item._id)} className="rounded-full border border-rose-200 px-3 py-1 text-sm text-rose-700">Delete</button></span></div>)}</div>
+    </section>
+  </div>;
 }

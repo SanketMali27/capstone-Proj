@@ -4,11 +4,12 @@ import api from '../utils/api';
 import { useSocket } from '../context/SocketContext';
 
 const iconMap = {
-  new_listing: Bell,
-  expiry_warning: Bell,
-  category_downgrade: Bell,
-  claimed: PackageCheck,
-  pickup_confirmed: CheckCheck
+  new_relevant_donation: Bell,
+  priority_increased: Bell,
+  donation_requested: PackageCheck,
+  donation_claimed: PackageCheck,
+  pickup_confirmed: CheckCheck,
+  donation_completed: CheckCheck
 };
 
 export default function NotificationBell() {

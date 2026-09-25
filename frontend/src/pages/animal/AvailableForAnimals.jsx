@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import FoodCard from '../../components/FoodCard';
+import EmptyState from '../../components/EmptyState';
 import api from '../../utils/api';
 import { useSocket } from '../../context/SocketContext';
 
@@ -18,6 +19,7 @@ export default function AvailableForAnimals() {
           )
         : response.data.data;
       setListings(filtered);
+      setError('');
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Failed to load animal-use food');
     }
@@ -32,7 +34,7 @@ export default function AvailableForAnimals() {
   }, [listingEvents?.length]);
 
   const claimListing = async (listing) => {
-    await api.put(`/food/${listing._id}/claim`);
+      await api.put(`/food/${listing._id}/request`);
     fetchListings();
   };
 
@@ -61,14 +63,19 @@ export default function AvailableForAnimals() {
           <FoodCard
             key={listing._id}
             listing={listing}
-            actionLabel="Claim for Animals"
+            actionLabel="Request for animal use"
             onAction={claimListing}
-            countdownTarget={listing.animalExpiryTime || listing.predictedExpiryTime}
-            countdownLabel="Moves to industry in"
-            note="This food is no longer safe for human consumption but can still be used for animals."
+            note="Donor-declared intended use: Animal."
           />
         ))}
       </div>
+
+      {!error && listings.length === 0 ? (
+        <EmptyState
+          title="No animal-use listings matched"
+          description="This page only shows available donations the donor explicitly intended for animal use."
+        />
+      ) : null}
     </div>
   );
 }

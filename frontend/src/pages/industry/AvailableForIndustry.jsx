@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import FoodCard from '../../components/FoodCard';
+import EmptyState from '../../components/EmptyState';
 import api from '../../utils/api';
 import { useSocket } from '../../context/SocketContext';
 
@@ -12,6 +13,7 @@ export default function AvailableForIndustry() {
     try {
       const response = await api.get('/food');
       setListings(response.data.data);
+      setError('');
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Failed to load industry-use food');
     }
@@ -28,7 +30,7 @@ export default function AvailableForIndustry() {
   const totalBulk = useMemo(() => listings.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [listings]);
 
   const claimListing = async (listing) => {
-    await api.put(`/food/${listing._id}/claim`);
+    await api.put(`/food/${listing._id}/request`);
     fetchListings();
   };
 
@@ -48,14 +50,19 @@ export default function AvailableForIndustry() {
           <FoodCard
             key={listing._id}
             listing={listing}
-            actionLabel="Request Collection"
+            actionLabel="Request collection"
             onAction={claimListing}
-            countdownTarget={listing.predictedExpiryTime}
-            countdownLabel="Final expiry in"
-            note="Suitable for composting, conversion, or biogas processing."
+            note="Donor-declared intended use: Industry (such as composting or biogas processing)."
           />
         ))}
       </div>
+
+      {!error && listings.length === 0 ? (
+        <EmptyState
+          title="No industry-use listings available"
+          description="This page only shows available donations the donor explicitly intended for industrial processing."
+        />
+      ) : null}
     </div>
   );
 }

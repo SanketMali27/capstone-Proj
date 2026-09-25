@@ -1,113 +1,47 @@
 const cron = require('node-cron');
 const FoodListing = require('../models/FoodListing');
+const NGORequirement = require('../models/NGORequirement');
 const User = require('../models/User');
-const { calculateSafetyScore } = require('./safetyModel');
+const { calculateRedistributionPriority } = require('./redistributionPriority');
 const { createNotification, emitToRoleRoom } = require('./notificationService');
 
-const CATEGORY_TO_ROOM = {
-  human: 'ngo-room',
-  animal: 'animal-room',
-  industry: 'industry-room'
-};
+const ROLE_BY_INTENT = { human: 'ngo', animal: 'animal_husbandry', industry: 'industry' };
+const ROOM_BY_INTENT = { human: 'ngo-room', animal: 'animal-room', industry: 'industry-room' };
 
-const notifyRoleUsers = async (role, message, foodListingId) => {
-  const users = await User.find({ role }).select('_id role');
-  await Promise.all(
-    users.map((user) =>
-      createNotification({
-        recipientId: user._id,
-        recipientRole: user.role,
-        type: 'category_downgrade',
-        message,
-        foodListingId
-      })
-    )
-  );
-};
-
-const startAutoDowngradeCron = () => {
-  cron.schedule('*/15 * * * *', async () => {
+const startPriorityCron = () => cron.schedule('*/15 * * * *', async () => {
+  try {
     const listings = await FoodListing.find({ status: 'available' });
+    for (const listing of listings) {
+      const role = ROLE_BY_INTENT[listing.intendedRecipientType];
+      const [recipients, requirements] = await Promise.all([
+        User.find({ role }).select('location'),
+        listing.intendedRecipientType === 'human' ? NGORequirement.find({ status: 'active' }).lean() : []
+      ]);
+      const previousScore = Number(listing.priorityScore || 0);
+      const previousUrgency = listing.urgencyLevel;
+      const result = calculateRedistributionPriority({ listing, recipients, requirements });
+      listing.priorityScore = result.priorityScore;
+      listing.urgencyLevel = result.urgencyLevel;
+      listing.priorityFactors = result.priorityFactors;
+      await listing.save();
 
-    await Promise.all(
-      listings.map(async (listing) => {
-        const previousCategory = listing.currentCategory;
-        const safetyData = calculateSafetyScore(listing.toObject(), new Date());
+      const meaningfullyChanged = previousUrgency !== listing.urgencyLevel || Math.abs(previousScore - listing.priorityScore) >= 10;
+      if (!meaningfullyChanged) continue;
+      emitToRoleRoom(ROOM_BY_INTENT[listing.intendedRecipientType], { action: 'priority_changed', event: listing.priorityScore > previousScore ? 'PRIORITY_INCREASED' : 'PRIORITY_UPDATED', listingId: listing._id, priorityScore: listing.priorityScore, urgencyLevel: listing.urgencyLevel });
+      if (listing.priorityScore > previousScore) {
+        const relevant = listing.intendedRecipientType === 'human'
+          ? recipients.filter((recipient) => requirements.some((requirement) => String(requirement.ngo) === String(recipient._id) && requirement.status === 'active' && requirement.foodType === listing.foodType && requirement.quantityUnit === listing.quantityUnit))
+          : recipients;
+        await Promise.all(relevant.map((recipient) => createNotification({
+          recipientId: recipient._id, recipientRole: role, type: 'priority_increased',
+          message: `${listing.urgencyLevel} priority donation matches your organization type${result.priorityFactors.nearestDistanceKm == null ? '' : ` ${result.priorityFactors.nearestDistanceKm} km away`}.`,
+          foodListingId: listing._id
+        })));
+      }
+    }
+  } catch (error) {
+    console.error('Redistribution priority recalculation failed:', error);
+  }
+});
 
-        listing.safetyScore = safetyData.safetyScore;
-        listing.currentCategory = safetyData.currentCategory;
-        listing.predictedExpiryTime = safetyData.predictedExpiryTime;
-        listing.humanExpiryTime = safetyData.humanExpiryTime;
-        listing.animalExpiryTime = safetyData.animalExpiryTime;
-        listing.safeConsumptionWindowHours = safetyData.safeConsumptionWindowHours;
-
-        if (safetyData.safetyScore === 0) {
-          listing.status = 'expired';
-          listing.currentCategory = 'expired';
-          await listing.save();
-
-          await createNotification({
-            recipientId: listing.restaurantId,
-            recipientRole: 'restaurant',
-            type: 'expiry_warning',
-            message: `${listing.foodName} has expired and is no longer visible to receivers.`,
-            foodListingId: listing._id
-          });
-
-          emitToRoleRoom('ngo-room', { foodListingId: listing._id, action: 'expired' });
-          emitToRoleRoom('animal-room', { foodListingId: listing._id, action: 'expired' });
-          emitToRoleRoom('industry-room', { foodListingId: listing._id, action: 'expired' });
-          return;
-        }
-
-        if (previousCategory !== listing.currentCategory) {
-          await listing.save();
-
-          if (listing.currentCategory === 'animal') {
-            await notifyRoleUsers(
-              'animal_husbandry',
-              `${listing.foodName} has been downgraded and is now available for animal use.`,
-              listing._id
-            );
-          }
-
-          if (listing.currentCategory === 'industry') {
-            await notifyRoleUsers(
-              'industry',
-              `${listing.foodName} is now available for industrial use.`,
-              listing._id
-            );
-          }
-
-          const previousRoom = CATEGORY_TO_ROOM[previousCategory];
-          const nextRoom = CATEGORY_TO_ROOM[listing.currentCategory];
-
-          if (previousRoom) {
-            emitToRoleRoom(previousRoom, {
-              foodListingId: listing._id,
-              action: 'remove',
-              category: previousCategory
-            });
-          }
-
-          if (nextRoom) {
-            emitToRoleRoom(nextRoom, {
-              foodListingId: listing._id,
-              action: 'add',
-              category: listing.currentCategory
-            });
-          }
-
-          return;
-        }
-
-        await listing.save();
-      })
-    );
-  });
-};
-
-module.exports = {
-  startAutoDowngradeCron
-};
-
+module.exports = { startPriorityCron };

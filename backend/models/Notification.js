@@ -13,7 +13,7 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['new_listing', 'expiry_warning', 'category_downgrade', 'claimed', 'pickup_confirmed'],
+      enum: ['new_relevant_donation', 'priority_increased', 'donation_requested', 'donation_claimed', 'pickup_confirmed', 'donation_completed'],
       required: true
     },
     message: {

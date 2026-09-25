@@ -6,7 +6,10 @@ const router = express.Router();
 
 router.get('/', auth, async (req, res) => {
   try {
-    const notifications = await Notification.find({ recipientId: req.user._id }).sort({ createdAt: -1 });
+    const notifications = await Notification.find({
+      recipientId: req.user._id,
+      type: { $in: ['new_relevant_donation', 'priority_increased', 'donation_requested', 'donation_claimed', 'pickup_confirmed', 'donation_completed'] }
+    }).sort({ createdAt: -1 });
     return res.json({
       success: true,
       data: notifications,

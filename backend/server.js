@@ -10,9 +10,11 @@ const foodRoutes = require('./routes/food');
 const analyticsRoutes = require('./routes/analytics');
 const notificationRoutes = require('./routes/notifications');
 const adminRoutes = require('./routes/admin');
+const requirementRoutes = require('./routes/requirements');
 const socketHandler = require('./socket/socketHandler');
 const { setSocketServer } = require('./utils/notificationService');
-const { startAutoDowngradeCron } = require('./utils/cronJob');
+const { startPriorityCron } = require('./utils/cronJob');
+const { connectToDatabase } = require('./utils/db');
 
 dotenv.config();
 
@@ -50,6 +52,7 @@ app.use('/api/food', foodRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/ngo/requirements', requirementRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -69,11 +72,11 @@ app.use((error, req, res, next) => {
 
 const startServer = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
+    await connectToDatabase(mongoose);
 
     socketHandler(io);
     setSocketServer(io);
-    startAutoDowngradeCron();
+    startPriorityCron();
 
     const port = process.env.PORT || 5000;
     server.listen(port, () => {
@@ -86,4 +89,3 @@ const startServer = async () => {
 };
 
 startServer();
-
