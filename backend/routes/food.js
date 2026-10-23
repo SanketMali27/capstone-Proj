@@ -5,12 +5,16 @@ const path = require('path');
 const FoodListing = require('../models/FoodListing');
 const NGORequirement = require('../models/NGORequirement');
 const User = require('../models/User');
+const WasteHistory = require('../models/WasteHistory');
 
 const auth = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 
 const {
   calculateRedistributionPriority,
+  calculatePersonalizedScore,
+  normalizePreferences,
+  DEFAULT_PREFERENCES,
   haversineKm,
 } = require('../utils/redistributionPriority');
 
@@ -20,6 +24,25 @@ const {
 } = require('../utils/notificationService');
 
 const router = express.Router();
+
+// Keep stale surplus off recipient feeds and expire any outstanding request
+// after one day. Donors can use a shorter pickup window when needed.
+const MAX_LISTING_AGE_MS = 24 * 60 * 60 * 1000;
+
+const expireStaleListings = async () => {
+  const now = new Date();
+  const ageCutoff = new Date(now.getTime() - MAX_LISTING_AGE_MS);
+  await FoodListing.updateMany(
+    {
+      status: { $in: ['available', 'requested', 'claimed', 'pickup_pending'] },
+      $or: [
+        { createdAt: { $lte: ageCutoff } },
+        { pickupAvailableUntil: { $ne: null, $lte: now } },
+      ],
+    },
+    { $set: { status: 'cancelled', cancelledAt: now, expiredAt: now } }
+  );
+};
 
 /**
  * ============================================================================
@@ -198,7 +221,8 @@ const getWaitingMetadata = (listing) => {
 
 const serializeListing = (
   listing,
-  viewerLocation = null
+  viewerLocation = null,
+  personalData = null
 ) => {
   const data = listing.toObject
     ? listing.toObject()
@@ -216,16 +240,55 @@ const serializeListing = (
     )
     : null;
 
+  const distanceKm =
+    personalData?.personalFactors?.distanceKm !== undefined
+      ? personalData.personalFactors.distanceKm
+      : distance === null
+        ? null
+        : Number(distance.toFixed(2));
+
+  const restaurantObj =
+    data.restaurantId && typeof data.restaurantId === 'object'
+      ? data.restaurantId
+      : null;
+
+  const claimedByObj =
+    data.claimedBy && typeof data.claimedBy === 'object'
+      ? data.claimedBy
+      : null;
+
   return {
     ...data,
-
-    distanceKm:
-      distance === null
-        ? null
-        : Number(
-          distance.toFixed(2)
-        ),
-
+    restaurantName:
+      restaurantObj?.organizationName ||
+      restaurantObj?.name ||
+      data.restaurantName,
+    restaurantAddress:
+      restaurantObj?.address ||
+      data.restaurantAddress ||
+      '',
+    restaurantPhone:
+      restaurantObj?.phone ||
+      data.restaurantPhone ||
+      '',
+    claimedByName:
+      claimedByObj?.organizationName ||
+      claimedByObj?.name ||
+      '',
+    claimedByPhone:
+      claimedByObj?.phone ||
+      '',
+    distanceKm,
+    personalScore:
+      personalData?.personalScore !== undefined
+        ? personalData.personalScore
+        : null,
+    personalFactors:
+      personalData?.personalFactors ||
+      null,
+    appliedWeights:
+      personalData?.appliedWeights ||
+      null,
     ...waiting,
   };
 };
@@ -321,9 +384,12 @@ router.get(
               'completed',
             ],
           },
-        }).sort({
-          requestedAt: -1,
-        });
+        })
+          .populate('restaurantId', 'name organizationName phone address location')
+          .populate('claimedBy', 'name organizationName role phone')
+          .sort({
+            requestedAt: -1,
+          });
 
       const data = listings.map(
         (listing) =>
@@ -346,6 +412,92 @@ router.get(
         message:
           error.message ||
           'Failed to fetch requested donations',
+      });
+    }
+  }
+);
+
+/**
+ * ============================================================================
+ * RECIPIENT PRIORITY PREFERENCES
+ * ============================================================================
+ */
+
+router.get(
+  '/preferences',
+  auth,
+  roleCheck('ngo', 'animal_husbandry', 'industry'),
+  async (req, res) => {
+    try {
+      const preferences = req.user.priorityPreferences || DEFAULT_PREFERENCES;
+      const normalized = normalizePreferences(preferences);
+
+      return res.json({
+        success: true,
+        data: {
+          preferences: normalized,
+          rawPreferences: preferences,
+          defaultPreferences: DEFAULT_PREFERENCES,
+        },
+        message: 'Priority preferences fetched successfully',
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        data: {},
+        message:
+          error.message ||
+          'Failed to fetch priority preferences',
+      });
+    }
+  }
+);
+
+router.put(
+  '/preferences',
+  auth,
+  roleCheck('ngo', 'animal_husbandry', 'industry'),
+  async (req, res) => {
+    try {
+      const { preferences, reset } = req.body;
+      let updatedPreferences;
+
+      if (reset) {
+        updatedPreferences = { ...DEFAULT_PREFERENCES };
+      } else {
+        if (!preferences || typeof preferences !== 'object') {
+          return res.status(400).json({
+            success: false,
+            data: {},
+            message: 'Invalid preferences payload provided',
+          });
+        }
+        updatedPreferences = normalizePreferences(preferences);
+      }
+
+      const updatedUser = await User.findByIdAndUpdate(
+        req.user._id,
+        { $set: { priorityPreferences: updatedPreferences } },
+        { new: true, runValidators: true }
+      ).select('-password');
+
+      return res.json({
+        success: true,
+        data: {
+          preferences: updatedUser.priorityPreferences,
+          defaultPreferences: DEFAULT_PREFERENCES,
+        },
+        message: reset
+          ? 'Restored default priority preferences'
+          : 'Priority preferences saved and normalized to 100%',
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        data: {},
+        message:
+          error.message ||
+          'Failed to update priority preferences',
       });
     }
   }
@@ -381,6 +533,30 @@ router.post(
           data: {},
           message:
             'Choose a valid intended recipient type',
+        });
+      }
+
+      const now = new Date();
+      const pickupFrom = payload.pickupAvailableFrom
+        ? new Date(payload.pickupAvailableFrom)
+        : now;
+      const pickupUntil = payload.pickupAvailableUntil
+        ? new Date(payload.pickupAvailableUntil)
+        : null;
+
+      if (
+        Number.isNaN(pickupFrom.getTime()) ||
+        pickupFrom > new Date(now.getTime() + MAX_LISTING_AGE_MS) ||
+        (pickupUntil && (
+          Number.isNaN(pickupUntil.getTime()) ||
+          pickupUntil <= pickupFrom ||
+          pickupUntil <= now
+        ))
+      ) {
+        return res.status(400).json({
+          success: false,
+          data: {},
+          message: 'Choose a valid pickup window within the next 24 hours.',
         });
       }
 
@@ -423,18 +599,10 @@ router.post(
           intendedRecipientType,
 
           pickupAvailableFrom:
-            payload.pickupAvailableFrom
-              ? new Date(
-                payload.pickupAvailableFrom
-              )
-              : new Date(),
+            pickupFrom,
 
           pickupAvailableUntil:
-            payload.pickupAvailableUntil
-              ? new Date(
-                payload.pickupAvailableUntil
-              )
-              : null,
+            pickupUntil,
         });
 
       /**
@@ -619,6 +787,7 @@ router.get(
   ),
   async (req, res) => {
     try {
+      await expireStaleListings();
       const {
         foodType,
         radius,
@@ -626,7 +795,7 @@ router.get(
         maxQuantity,
         minPriorityScore,
         maxPriorityScore,
-        sortBy = 'priority',
+        sortBy = 'personal',
         urgency,
         demandMatch,
       } = req.query;
@@ -640,6 +809,11 @@ router.get(
         status: 'available',
 
         intendedRecipientType,
+        createdAt: { $gt: new Date(Date.now() - MAX_LISTING_AGE_MS) },
+        $or: [
+          { pickupAvailableUntil: null },
+          { pickupAvailableUntil: { $gt: new Date() } },
+        ],
       };
 
       /**
@@ -758,61 +932,61 @@ router.get(
        * Database sorting.
        */
       const sort =
-        sortBy === 'distance'
-          ? {}
-
-          : sortBy ===
-            'quantity'
+        sortBy === 'quantity'
+          ? {
+            quantity: -1,
+          }
+          : sortBy === 'demand'
             ? {
-              quantity: -1,
+              'priorityFactors.demandMatchScore': -1,
+              priorityScore: -1,
             }
+            : {
+              priorityScore: -1,
+              createdAt: 1,
+            };
 
-            : sortBy ===
-              'demand'
-              ? {
-                'priorityFactors.demandMatchScore':
-                  -1,
-
-                priorityScore:
-                  -1,
-              }
-
-              : {
-                priorityScore:
-                  -1,
-
-                createdAt:
-                  1,
-              };
-
-      const listings =
-        await FoodListing.find(
-          query
-        )
+      const [listings, requirements] = await Promise.all([
+        FoodListing.find(query)
           .sort(sort)
-          .populate(
-            'claimedBy',
-            'name organizationName role'
-          );
+          .populate('restaurantId', 'name organizationName phone address location')
+          .populate('claimedBy', 'name organizationName role phone'),
+        req.user.role === 'ngo'
+          ? NGORequirement.find({ status: 'active' }).lean()
+          : Promise.resolve([]),
+      ]);
 
-      const data =
-        listings.map(
-          (listing) =>
-            serializeListing(
-              listing,
-              req.user.location
-            )
+      const data = listings.map((listing) => {
+        const personalData = calculatePersonalizedScore({
+          listing,
+          recipient: req.user,
+          requirements,
+          preferences: req.user.priorityPreferences || DEFAULT_PREFERENCES,
+        });
+
+        return serializeListing(
+          listing,
+          req.user.location,
+          personalData
         );
+      });
 
       /**
-       * Urgency sorting.
+       * Sort listings.
        */
-      if (
-        sortBy ===
-        'urgency'
-      ) {
-        const urgencyRank =
-        {
+      if (sortBy === 'personal') {
+        data.sort(
+          (a, b) => (b.personalScore || 0) - (a.personalScore || 0)
+        );
+      } else if (sortBy === 'distance') {
+        data.sort((a, b) => {
+          if (a.distanceKm === null && b.distanceKm === null) return 0;
+          if (a.distanceKm === null) return 1;
+          if (b.distanceKm === null) return -1;
+          return a.distanceKm - b.distanceKm;
+        });
+      } else if (sortBy === 'urgency') {
+        const urgencyRank = {
           URGENT: 0,
           HIGH: 1,
           MEDIUM: 2,
@@ -821,15 +995,19 @@ router.get(
 
         data.sort(
           (a, b) =>
-            urgencyRank[
-            a.urgencyLevel
-            ] -
-            urgencyRank[
-            b.urgencyLevel
-            ] ||
-            b.priorityScore -
-            a.priorityScore
+            urgencyRank[a.urgencyLevel] - urgencyRank[b.urgencyLevel] ||
+            b.priorityScore - a.priorityScore
         );
+      } else if (sortBy === 'quantity') {
+        data.sort((a, b) => (b.quantity || 0) - (a.quantity || 0));
+      } else if (sortBy === 'demand') {
+        data.sort(
+          (a, b) =>
+            (b.priorityFactors?.demandMatchScore || 0) -
+            (a.priorityFactors?.demandMatchScore || 0)
+        );
+      } else if (sortBy === 'priority') {
+        data.sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0));
       }
 
       return res.json({
@@ -862,6 +1040,7 @@ router.get(
   roleCheck('restaurant'),
   async (req, res) => {
     try {
+      await expireStaleListings();
       const listings =
         await FoodListing.find({
           restaurantId:
@@ -878,7 +1057,7 @@ router.get(
           })
           .populate(
             'claimedBy',
-            'name organizationName role'
+            'name organizationName role phone'
           );
 
       const data =
@@ -985,13 +1164,28 @@ router.get(
         });
       }
 
+      let personalData = null;
+      if (['ngo', 'animal_husbandry', 'industry'].includes(req.user.role)) {
+        const requirements =
+          req.user.role === 'ngo'
+            ? await NGORequirement.find({ status: 'active' }).lean()
+            : [];
+        personalData = calculatePersonalizedScore({
+          listing,
+          recipient: req.user,
+          requirements,
+          preferences: req.user.priorityPreferences || DEFAULT_PREFERENCES,
+        });
+      }
+
       return res.json({
         success: true,
 
         data:
           serializeListing(
             listing,
-            req.user.location
+            req.user.location,
+            personalData
           ),
 
         message:
@@ -1021,6 +1215,7 @@ router.put(
   roleCheck('restaurant'),
   async (req, res) => {
     try {
+      await expireStaleListings();
       const listing =
         await FoodListing.findOne({
           _id: req.params.id,
@@ -1206,6 +1401,7 @@ router.put(
   ),
   async (req, res) => {
     try {
+      await expireStaleListings();
       const listing =
         await FoodListing.findById(
           req.params.id
@@ -1268,6 +1464,12 @@ router.put(
 
             intendedRecipientType:
               recipientIntent,
+
+            createdAt: { $gt: new Date(Date.now() - MAX_LISTING_AGE_MS) },
+            $or: [
+              { pickupAvailableUntil: null },
+              { pickupAvailableUntil: { $gt: new Date() } },
+            ],
           },
 
           {
@@ -1367,6 +1569,7 @@ router.put(
   roleCheck('restaurant'),
   async (req, res) => {
     try {
+      await expireStaleListings();
       const listing =
         await FoodListing.findOne({
           _id:
@@ -1413,7 +1616,7 @@ router.put(
           'donation_claimed',
 
         message:
-          `Your request for ${listing.foodName} was accepted.`,
+          `Your request for ${listing.foodName} was accepted. Please arrange collection from the donor location during the pickup window.`,
 
         foodListingId:
           listing._id,
@@ -1522,8 +1725,7 @@ router.put(
         String(
           req.user._id
         ) ||
-        listing.status !==
-        'claimed'
+        !['claimed', 'pickup_pending'].includes(listing.status)
       ) {
         return res.status(403).json({
           success: false,
@@ -1555,6 +1757,37 @@ router.put(
         req.body.notes || '';
 
       await listing.save();
+
+      /**
+       * Synchronize completed donation with WasteHistory
+       */
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        await WasteHistory.findOneAndUpdate(
+          { restaurantId: listing.restaurantId, date: today },
+          {
+            $inc: { totalClaimed: listing.quantity || 0 },
+            $push: {
+              foodItems: {
+                foodName: listing.foodName,
+                foodType: listing.foodType,
+                quantityPrepared: listing.quantity || 0,
+                quantityWasted: 0,
+                quantityClaimed: listing.quantity || 0,
+              },
+            },
+            $setOnInsert: {
+              dayOfWeek: today.toLocaleDateString('en-US', { weekday: 'long' }),
+              totalWasted: 0,
+              specialEvent: false,
+            },
+          },
+          { upsert: true, new: true }
+        );
+      } catch (historyErr) {
+        console.error('Failed to update waste history for completed listing:', historyErr);
+      }
 
       /**
        * NGO pickup can fulfil NGO

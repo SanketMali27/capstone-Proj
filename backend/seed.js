@@ -13,9 +13,9 @@ dotenv.config();
 const point = (longitude, latitude) => ({ type: 'Point', coordinates: [longitude, latitude] });
 const users = [
   { name: 'Green Spoon Kitchen', email: 'restaurant@foodbridge.com', role: 'restaurant', organizationName: 'Green Spoon Kitchen', phone: '9876543210', address: '12 Market Road', location: point(77.5946, 12.9716), isVerified: true },
-  { name: 'Hope Hands NGO', email: 'ngo@foodbridge.com', role: 'ngo', organizationName: 'Hope Hands', phone: '9000000001', address: '18 Community Street', location: point(77.599, 12.968), isVerified: true },
-  { name: 'Sunrise Dairy Farm', email: 'animal@foodbridge.com', role: 'animal_husbandry', organizationName: 'Sunrise Dairy Farm', animalType: 'cow', phone: '9000000002', address: '22 Farm Track', location: point(77.601, 12.975), isVerified: true },
-  { name: 'BioLoop Industries', email: 'industry@foodbridge.com', role: 'industry', organizationName: 'BioLoop Industries', industryType: 'biogas', phone: '9000000003', address: '45 Industrial Avenue', location: point(77.61, 12.98), isVerified: true },
+  { name: 'Hope Hands NGO', email: 'ngo@foodbridge.com', role: 'ngo', organizationName: 'Hope Hands', phone: '9000000001', address: '18 Community Street', location: point(77.599, 12.968), isVerified: true, priorityPreferences: { waitingTime: 30, demandMatch: 40, distance: 15, quantity: 10, pickupAvailability: 5 } },
+  { name: 'Sunrise Dairy Farm', email: 'animal@foodbridge.com', role: 'animal_husbandry', organizationName: 'Sunrise Dairy Farm', animalType: 'cow', phone: '9000000002', address: '22 Farm Track', location: point(77.601, 12.975), isVerified: true, priorityPreferences: { waitingTime: 20, demandMatch: 10, distance: 30, quantity: 35, pickupAvailability: 5 } },
+  { name: 'BioLoop Industries', email: 'industry@foodbridge.com', role: 'industry', organizationName: 'BioLoop Industries', industryType: 'biogas', phone: '9000000003', address: '45 Industrial Avenue', location: point(77.61, 12.98), isVerified: true, priorityPreferences: { waitingTime: 10, demandMatch: 5, distance: 25, quantity: 50, pickupAvailability: 10 } },
   { name: 'Platform Admin', email: 'admin@foodbridge.com', role: 'admin', organizationName: 'FoodBridge Admin', phone: '9000000004', address: 'HQ', location: point(77.58, 12.97), isVerified: true }
 ];
 

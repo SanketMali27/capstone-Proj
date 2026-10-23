@@ -57,6 +57,13 @@ const userSchema = new mongoose.Schema(
     isVerified: {
       type: Boolean,
       default: false
+    },
+    priorityPreferences: {
+      waitingTime: { type: Number, default: 35 },
+      demandMatch: { type: Number, default: 30 },
+      distance: { type: Number, default: 20 },
+      quantity: { type: Number, default: 10 },
+      pickupAvailability: { type: Number, default: 5 }
     }
   },
   {

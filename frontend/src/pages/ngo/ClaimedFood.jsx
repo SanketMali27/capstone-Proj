@@ -153,21 +153,22 @@ export default function ClaimedFood() {
 
       case 'claimed':
         return (
-          <div className="rounded-[2rem] border border-stone-200 bg-white p-5">
+          <div className="rounded-[2rem] border border-blue-200 bg-blue-50/40 p-5">
             <div>
-              <p className="text-sm font-semibold text-slate-900">
-                Pickup ready
+              <p className="text-sm font-semibold text-blue-900">
+                Pickup ready — Request accepted
               </p>
 
-              <p className="mt-1 text-sm text-slate-600">
-                The donor accepted your request.
-                Confirm the pickup after receiving
-                the donation.
+              <p className="mt-1 text-sm text-slate-700">
+                The donor accepted your request. Please arrange transportation to collect the donation from the donor location during the agreed pickup window.
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Note: FoodBridge coordinates platform status tracking and does not dispatch delivery drivers.
               </p>
             </div>
 
             <textarea
-              placeholder="Optional pickup note"
+              placeholder="Optional notes upon handover (e.g. volunteer name, collection vehicle)"
               value={
                 notes[listing._id] || ''
               }

@@ -7,12 +7,26 @@ const { createNotification, emitToRoleRoom } = require('./notificationService');
 
 const ROLE_BY_INTENT = { human: 'ngo', animal: 'animal_husbandry', industry: 'industry' };
 const ROOM_BY_INTENT = { human: 'ngo-room', animal: 'animal-room', industry: 'industry-room' };
+const MAX_LISTING_AGE_MS = 24 * 60 * 60 * 1000;
 
 const startPriorityCron = () => cron.schedule('*/15 * * * *', async () => {
   try {
+    const now = new Date();
+    await FoodListing.updateMany(
+      {
+        status: { $in: ['available', 'requested', 'claimed', 'pickup_pending'] },
+        $or: [
+          { createdAt: { $lte: new Date(now.getTime() - MAX_LISTING_AGE_MS) } },
+          { pickupAvailableUntil: { $ne: null, $lte: now } },
+        ],
+      },
+      { $set: { status: 'cancelled', cancelledAt: now, expiredAt: now } }
+    );
+
     const listings = await FoodListing.find({ status: 'available' });
     for (const listing of listings) {
       const role = ROLE_BY_INTENT[listing.intendedRecipientType];
+      if (!role) continue;
       const [recipients, requirements] = await Promise.all([
         User.find({ role }).select('location'),
         listing.intendedRecipientType === 'human' ? NGORequirement.find({ status: 'active' }).lean() : []

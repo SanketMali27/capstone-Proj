@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import PriorityPreferences from '../../components/PriorityPreferences';
 import api from '../../utils/api';
 
 const INITIAL_FORM = {
@@ -436,6 +437,11 @@ export default function NGODashboard() {
           </div>
         </Link>
       </section>
+
+      {/* ======================================================
+          PRIORITY PREFERENCES
+          ====================================================== */}
+      <PriorityPreferences />
 
       {/* ======================================================
           ERROR MESSAGE

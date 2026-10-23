@@ -35,7 +35,9 @@ const foodListingSchema = new mongoose.Schema({
   claimedAt: Date,
   pickedUpAt: Date,
   completedAt: Date,
-  pickupNote: { type: String, default: '' }
+  cancelledAt: Date,
+  pickupNote: { type: String, default: '' },
+  expiredAt: { type: Date, default: null }
 }, { timestamps: true });
 
 foodListingSchema.index({ restaurantLocation: '2dsphere' });
